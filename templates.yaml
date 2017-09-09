@@ -1,0 +1,3 @@
+welcome: Welcome to language translator. You will say a sentence in English, and I will translate it to French. Ready?
+
+translation: Your statement in French is {{ numbers|join(", ") }}.
