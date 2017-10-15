@@ -145,6 +145,7 @@ class MyTestCase(unittest.TestCase):
         assert tf.assert_rank(max_target_sequence_length, 0, message='Max Target Sequence Length has wrong rank')
         assert tf.assert_rank(source_sequence_length, 1, message='Source Sequence Length has wrong rank')
 
+
     def test_process_encoding_input(self):
         batch_size = 2
         seq_length = 3
@@ -163,8 +164,38 @@ class MyTestCase(unittest.TestCase):
             self.assertEqual(test_dec_input[0][0], target_vocab_to_int['<GO>'], 'Missing GO Id.')
             self.assertEqual(test_dec_input[1][0], target_vocab_to_int['<GO>'], 'Missing GO Id.')
 
+    def test_encoding_layer(self):
+        rnn_size = 512
+        batch_size = 64
+        num_layers = 3
+        source_sequence_len = 22
+        source_vocab_size = 20
+        encoding_embedding_size = 30
 
+        with tf.Graph().as_default():
+            rnn_inputs = tf.placeholder(tf.int32, [batch_size,
+                                                   source_sequence_len])
+            source_sequence_length = tf.placeholder(tf.int32,
+                                                    (None,),
+                                                    name='source_sequence_length')
+            keep_prob = tf.placeholder(tf.float32)
 
+            enc_output, states = lt.encoding_layer(rnn_inputs, rnn_size, num_layers, keep_prob,
+                                                   source_sequence_length, source_vocab_size,
+                                                   encoding_embedding_size)
+
+            self.assertEqual(len(states), num_layers,
+                             'Found {} state(s). It should be {} states.'.format(len(states), num_layers))
+
+            bad_types = [type(state) for state in states if not isinstance(state, tf.contrib.rnn.LSTMStateTuple)]
+
+            self.assertEqual(len(bad_types), 0)
+
+            bad_shapes = [state_tensor.get_shape()
+                          for state in states
+                          for state_tensor in state
+                          if state_tensor.get_shape().as_list() not in [[None, rnn_size], [batch_size, rnn_size]]]
+            self.assertEqual(len(bad_shapes), 0)
 
 
 
