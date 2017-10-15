@@ -249,6 +249,105 @@ class TestLanguageTrainer(unittest.TestCase):
                 assert train_decoder_output.rnn_output.get_shape().as_list() == [batch_size, None, vocab_size], \
                     'Wrong shape returned.  Found {}'.format(train_decoder_output.rnn_output.get_shape())
 
+    def test_decoding_layer_infer(self):
+        batch_size = 64
+        vocab_size = 1000
+        sequence_length = 22
+        embedding_size = 200
+        rnn_size = 512
+        num_layers = 3
+
+        with tf.Graph().as_default():
+            with tf.variable_scope("decoding") as decoding_scope:
+                dec_embeddings = tf.Variable(tf.random_uniform([vocab_size, embedding_size]))
+
+                dec_embed_input = tf.placeholder(tf.float32, [batch_size, sequence_length, embedding_size])
+                keep_prob = tf.placeholder(tf.float32)
+                target_sequence_length_p = tf.placeholder(tf.int32, (None,), name='target_sequence_length')
+                max_target_sequence_length = tf.reduce_max(target_sequence_length_p, name='max_target_len')
+
+                for layer in range(num_layers):
+                    with tf.variable_scope('decoder_{}'.format(layer)):
+                        lstm = tf.contrib.rnn.LSTMCell(rnn_size,
+                                                       initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=2))
+                        dec_cell = tf.contrib.rnn.DropoutWrapper(lstm,
+                                                                 input_keep_prob=keep_prob)
+
+                output_layer = Dense(vocab_size,
+                                     kernel_initializer=tf.truncated_normal_initializer(mean=0.0, stddev=0.1),
+                                     name='output_layer')
+                # output_fn = lambda x: tf.contrib.layers.fully_connected(x, vocab_size, None, scope=decoding_scope)
+
+
+                encoder_state = tf.contrib.rnn.LSTMStateTuple(
+                    tf.placeholder(tf.float32, [None, rnn_size]),
+                    tf.placeholder(tf.float32, [None, rnn_size]))
+
+                infer_logits_output = lt.decoding_layer_infer(encoder_state,
+                                                              dec_cell,
+                                                              dec_embeddings,
+                                                              1,
+                                                              2,
+                                                              max_target_sequence_length,
+                                                              vocab_size,
+                                                              output_layer,
+                                                              batch_size,
+                                                              keep_prob)
+
+                # encoder_state, dec_cell, dec_embeddings, 10, 20,
+                #                     sequence_length, vocab_size, decoding_scope, output_fn, keep_prob)
+
+
+                self.assertEqual(isinstance(infer_logits_output, tf.contrib.seq2seq.BasicDecoderOutput), True,
+                                 'Found wrong type: {}'.format(type(infer_logits_output)))
+
+                assert infer_logits_output.sample_id.get_shape().as_list() == [batch_size, None], \
+                    'Wrong shape returned.  Found {}'.format(infer_logits_output.sample_id.get_shape())
+
+    def test_decoding_layer(self):
+        batch_size = 64
+        vocab_size = 1000
+        embedding_size = 200
+        sequence_length = 22
+        rnn_size = 512
+        num_layers = 3
+        target_vocab_to_int = {'<EOS>': 1, '<GO>': 3}
+
+        with tf.Graph().as_default():
+            target_sequence_length_p = tf.placeholder(tf.int32, (None,), name='target_sequence_length')
+            max_target_sequence_length = tf.reduce_max(target_sequence_length_p, name='max_target_len')
+
+            dec_input = tf.placeholder(tf.int32, [batch_size, sequence_length])
+            dec_embed_input = tf.placeholder(tf.float32, [batch_size, sequence_length, embedding_size])
+            dec_embeddings = tf.placeholder(tf.float32, [vocab_size, embedding_size])
+            keep_prob = tf.placeholder(tf.float32)
+            state = tf.contrib.rnn.LSTMStateTuple(
+                tf.placeholder(tf.float32, [None, rnn_size]),
+                tf.placeholder(tf.float32, [None, rnn_size]))
+            encoder_state = (state, state, state)
+
+            train_decoder_output, infer_logits_output = lt.decoding_layer(dec_input,
+                                                                          encoder_state,
+                                                                          target_sequence_length_p,
+                                                                          max_target_sequence_length,
+                                                                          rnn_size,
+                                                                          num_layers,
+                                                                          target_vocab_to_int,
+                                                                          vocab_size,
+                                                                          batch_size,
+                                                                          keep_prob,
+                                                                          embedding_size)
+
+            assert isinstance(train_decoder_output, tf.contrib.seq2seq.BasicDecoderOutput), \
+                'Found wrong type: {}'.format(type(train_decoder_output))
+            assert isinstance(infer_logits_output, tf.contrib.seq2seq.BasicDecoderOutput), \
+                'Found wrong type: {}'.format(type(infer_logits_output))
+
+            assert train_decoder_output.rnn_output.get_shape().as_list() == [batch_size, None, vocab_size], \
+                'Wrong shape returned.  Found {}'.format(train_decoder_output.rnn_output.get_shape())
+            assert infer_logits_output.sample_id.get_shape().as_list() == [batch_size, None], \
+                'Wrong shape returned.  Found {}'.format(infer_logits_output.sample_id.get_shape())
+
 
 if __name__ == '__main__':
     unittest.main()
