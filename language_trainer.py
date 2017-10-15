@@ -63,6 +63,20 @@ def create_lookup_tables(text):
 
     return vocab_to_int, int_to_vocab
 
+def text_to_ids(text_list, vocab_to_int, text_type):
+    """
+    Converts text to vocabulary integers.
+    :param text: Input list of text items.
+    :param text_type: Valid inputs are 'x' and 'y'
+    :return: List of integer codes for each word.
+    """
+    text_ids = [[vocab_to_int.get(word, vocab_to_int['<UNK>'])
+                 for word in entry.split(' ')] for entry
+                in str(text_list).split('\n')]
+
+    return text_ids
+
+
 
 if __name__ == '__main__':
 
