@@ -145,6 +145,27 @@ class MyTestCase(unittest.TestCase):
         assert tf.assert_rank(max_target_sequence_length, 0, message='Max Target Sequence Length has wrong rank')
         assert tf.assert_rank(source_sequence_length, 1, message='Source Sequence Length has wrong rank')
 
+    def test_process_encoding_input(self):
+        batch_size = 2
+        seq_length = 3
+        target_vocab_to_int = {'<GO>': 3}
+        with tf.Graph().as_default():
+            target_data = tf.placeholder(tf.int32, [batch_size, seq_length])
+            dec_input = lt.process_decoder_input(target_data, target_vocab_to_int, batch_size)
+
+            self.assertEqual(dec_input.get_shape(), (batch_size, seq_length),
+                             'Wrong shape returned.  Found {}'.format(dec_input.get_shape()))
+
+            test_target_data = [[10, 20, 30], [40, 18, 23]]
+            with tf.Session() as sess:
+                test_dec_input = sess.run(dec_input, {target_data: test_target_data})
+
+            self.assertEqual(test_dec_input[0][0], target_vocab_to_int['<GO>'], 'Missing GO Id.')
+            self.assertEqual(test_dec_input[1][0], target_vocab_to_int['<GO>'], 'Missing GO Id.')
+
+
+
+
 
 
 if __name__ == '__main__':

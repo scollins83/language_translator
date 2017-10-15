@@ -146,6 +146,19 @@ def model_inputs():
     return inputs, targets, learning_rate, keep_probability, target_sequence_length, max_target_len, source_sequence_length
 
 
+def process_decoder_input(target_data, target_vocab_to_int, batch_size):
+    """
+    Preprocess target data for encoding.
+    :param target_data:
+    :param target_vocab_to_int:
+    :param batch_size:
+    :return:
+    """
+    ending = tf.strided_slice(target_data, [0, 0], [batch_size, -1], [1, 1])
+    preprocessed_target_data = tf.concat([tf.fill([batch_size, 1], target_vocab_to_int['<GO>']), ending], 1)
+
+    return preprocessed_target_data
+
 
 if __name__ == '__main__':
 
