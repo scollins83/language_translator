@@ -4,6 +4,9 @@ import json
 import sys
 import copy
 import pickle
+from distutils.version import LooseVersion
+import warnings
+import tensorflow as tf
 
 CODES = {'<PAD>': 0, '<EOS>': 1, '<UNK>': 2, '<GO>': 3}
 
@@ -127,6 +130,23 @@ def load_preprocessing_data(preprocess_path):
         return pickle.load(in_file)
 
 
+def model_inputs():
+    """
+    Establish model inputs for tensorflow graph.
+    :return:Tuple (input, targets, learning rate, keep probability, target sequence length,
+    max target sequence length, source sequence length)
+    """
+    inputs = tf.placeholder(tf.int32, [None, None], name='input')
+    targets = tf.placeholder(tf.int32, [None, None], name='targets')
+    learning_rate = tf.placeholder(tf.float32, shape=(), name='learning_rate')
+    keep_probability = tf.placeholder(tf.float32, shape=(), name='keep_prob')
+    target_sequence_length = tf.placeholder(tf.int32, [None], name='target_sequence_length')
+    max_target_len = tf.reduce_max(target_sequence_length, name='max_target_len')
+    source_sequence_length = tf.placeholder(tf.int32, [None], name='source_sequence_length')
+    return inputs, targets, learning_rate, keep_probability, target_sequence_length, max_target_len, source_sequence_length
+
+
+
 if __name__ == '__main__':
 
     args = parse_args()
@@ -162,7 +182,14 @@ if __name__ == '__main__':
     (x_ids, y_ids), (x_vocab_to_int,
                      y_vocab_to_int), _ = load_preprocessing_data(config['preprocessing_path'])
 
+    # Check TensorFlow Version
+    assert LooseVersion(tf.__version__) >= LooseVersion('1.1'), 'Please use TensorFlow version 1.1 or newer'
+    print('TensorFlow Version: {}'.format(tf.__version__))
 
-
+    # Check for a GPU
+    if not tf.test.gpu_device_name():
+        warnings.warn('No GPU found. Please use a GPU to train your neural network.')
+    else:
+        print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
 
     sys.exit()
