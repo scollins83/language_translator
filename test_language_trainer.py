@@ -23,13 +23,22 @@ class MyTestCase(unittest.TestCase):
         """
         text = "The qUick brown FoX jumped OveR the lAzy dog"
         lower_x = lt.lower_text(text)
-        print(lower_x)
         lower_values = [ord(letter) for letter in lower_x if ord(letter) != 32]
-        print(lower_values)
         min_value = min(lower_values)
         max_value = max(lower_values)
         self.assertGreaterEqual(min_value, 97)
         self.assertLessEqual(max_value, 122)
+
+    def test_create_lookup_tables(self):
+        """
+        Creates vocab-to-int and int-to-vocab dictionaries.
+        """
+        text = "the quick brown fox jumped over the lazy dog"
+        vocab_to_int, int_to_vocab = lt.create_lookup_tables(text)
+        self.assertEqual(len(vocab_to_int),len(int_to_vocab), "Lookup dictionaries "
+                                                              "are not the same length.")
+        self.assertEqual(vocab_to_int['<EOS>'], 1, "Codes not added to index.")
+
 
 
 
