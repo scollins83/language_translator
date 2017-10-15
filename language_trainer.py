@@ -386,6 +386,32 @@ def get_accuracy(target, logits):
     return np.mean(np.equal(target, logits))
 
 
+def save_params(params, params_save_path):
+    """
+    Save parameters to file
+    """
+    with open('params.p', 'wb') as out_file:
+        pickle.dump(params, out_file)
+
+
+def load_params():
+    """
+    Load parameters from file
+    """
+    with open('params.p', mode='rb') as in_file:
+        return pickle.load(in_file)
+
+
+def sentence_to_seq(sentence, vocab_to_int):
+    """
+    Convert a sentence to a sequence of ids
+    :param sentence: String
+    :param vocab_to_int: Dictionary to go from the words to an id
+    :return: List of word ids
+    """
+    sentence = sentence.lower()
+    return [vocab_to_int.get(word, vocab_to_int['<UNK>']) for word in sentence.split(' ')]
+
 
 if __name__ == '__main__':
 
@@ -432,105 +458,143 @@ if __name__ == '__main__':
     else:
         print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
 
-    max_target_sentence_length = max([len(sentence) for sentence in x_ids])
+    if config['train_model']:
 
-    train_graph = tf.Graph()
-    with train_graph.as_default():
-        input_data, targets, lr, keep_prob, target_sequence_length, max_target_sequence_length, source_sequence_length = model_inputs()
+        max_target_sentence_length = max([len(sentence) for sentence in x_ids])
 
-        # sequence_length = tf.placeholder_with_default(max_target_sentence_length, None, name='sequence_length')
-        input_shape = tf.shape(input_data)
+        train_graph = tf.Graph()
+        with train_graph.as_default():
+            input_data, targets, lr, keep_prob, target_sequence_length, max_target_sequence_length, source_sequence_length = model_inputs()
 
-        train_logits, inference_logits = seq2seq_model(tf.reverse(input_data, [-1]),
-                                                       targets,
-                                                       keep_prob,
-                                                       config['batch_size'],
-                                                       source_sequence_length,
-                                                       target_sequence_length,
-                                                       max_target_sequence_length,
-                                                       len(x_vocab_to_int),
-                                                       len(y_vocab_to_int),
-                                                       config['encoding_embedding_size'],
-                                                       config['decoding_embedding_size'],
-                                                       config['rnn_size'],
-                                                       config['num_layers'],
-                                                       y_vocab_to_int)
+            # sequence_length = tf.placeholder_with_default(max_target_sentence_length, None, name='sequence_length')
+            input_shape = tf.shape(input_data)
 
-        training_logits = tf.identity(train_logits.rnn_output, name='logits')
-        inference_logits = tf.identity(inference_logits.sample_id, name='predictions')
+            train_logits, inference_logits = seq2seq_model(tf.reverse(input_data, [-1]),
+                                                           targets,
+                                                           keep_prob,
+                                                           config['batch_size'],
+                                                           source_sequence_length,
+                                                           target_sequence_length,
+                                                           max_target_sequence_length,
+                                                           len(x_vocab_to_int),
+                                                           len(y_vocab_to_int),
+                                                           config['encoding_embedding_size'],
+                                                           config['decoding_embedding_size'],
+                                                           config['rnn_size'],
+                                                           config['num_layers'],
+                                                           y_vocab_to_int)
 
-        masks = tf.sequence_mask(target_sequence_length, max_target_sequence_length, dtype=tf.float32, name='masks')
+            training_logits = tf.identity(train_logits.rnn_output, name='logits')
+            inference_logits = tf.identity(inference_logits.sample_id, name='predictions')
 
-        with tf.name_scope("optimization"):
-            # Loss function
-            cost = tf.contrib.seq2seq.sequence_loss(
-                training_logits,
-                targets,
-                masks)
+            masks = tf.sequence_mask(target_sequence_length, max_target_sequence_length, dtype=tf.float32, name='masks')
 
-            # Optimizer
-            optimizer = tf.train.AdamOptimizer(lr)
+            with tf.name_scope("optimization"):
+                # Loss function
+                cost = tf.contrib.seq2seq.sequence_loss(
+                    training_logits,
+                    targets,
+                    masks)
 
-            # Gradient Clipping
-            gradients = optimizer.compute_gradients(cost)
-            capped_gradients = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gradients if grad is not None]
-            train_op = optimizer.apply_gradients(capped_gradients)
+                # Optimizer
+                optimizer = tf.train.AdamOptimizer(lr)
 
-    # Split data to training and validation sets
-    train_source = x_ids[config['batch_size']:]
-    train_target = y_ids[config['batch_size']:]
-    valid_source = x_ids[:config['batch_size']]
-    valid_target = y_ids[:config['batch_size']]
-    (valid_sources_batch, valid_targets_batch, valid_sources_lengths, valid_targets_lengths) = next(
-        get_batches(valid_source,
-                    valid_target,
-                    config['batch_size'],
-                    x_vocab_to_int['<PAD>'],
-                    y_vocab_to_int['<PAD>']))
-    with tf.Session(graph=train_graph) as sess:
-        sess.run(tf.global_variables_initializer())
+                # Gradient Clipping
+                gradients = optimizer.compute_gradients(cost)
+                capped_gradients = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gradients if
+                                    grad is not None]
+                train_op = optimizer.apply_gradients(capped_gradients)
 
-        for epoch_i in range(config['epochs']):
-            for batch_i, (source_batch, target_batch, sources_lengths, targets_lengths) in enumerate(
-                    get_batches(train_source, train_target, config['batch_size'],
-                                x_vocab_to_int['<PAD>'],
-                                y_vocab_to_int['<PAD>'])):
+        # Split data to training and validation sets
+        train_source = x_ids[config['batch_size']:]
+        train_target = y_ids[config['batch_size']:]
+        valid_source = x_ids[:config['batch_size']]
+        valid_target = y_ids[:config['batch_size']]
+        (valid_sources_batch, valid_targets_batch, valid_sources_lengths, valid_targets_lengths) = next(
+            get_batches(valid_source,
+                        valid_target,
+                        config['batch_size'],
+                        x_vocab_to_int['<PAD>'],
+                        y_vocab_to_int['<PAD>']))
+        with tf.Session(graph=train_graph) as sess:
+            sess.run(tf.global_variables_initializer())
 
-                _, loss = sess.run(
-                    [train_op, cost],
-                    {input_data: source_batch,
-                     targets: target_batch,
-                     lr: config['learning_rate'],
-                     target_sequence_length: targets_lengths,
-                     source_sequence_length: sources_lengths,
-                     keep_prob: config['keep_probability']})
+            for epoch_i in range(config['epochs']):
+                for batch_i, (source_batch, target_batch, sources_lengths, targets_lengths) in enumerate(
+                        get_batches(train_source, train_target, config['batch_size'],
+                                    x_vocab_to_int['<PAD>'],
+                                    y_vocab_to_int['<PAD>'])):
 
-                if batch_i % config['display_step'] == 0 and batch_i > 0:
-                    batch_train_logits = sess.run(
-                        inference_logits,
+                    _, loss = sess.run(
+                        [train_op, cost],
                         {input_data: source_batch,
-                         source_sequence_length: sources_lengths,
+                         targets: target_batch,
+                         lr: config['learning_rate'],
                          target_sequence_length: targets_lengths,
-                         keep_prob: 1.0})
+                         source_sequence_length: sources_lengths,
+                         keep_prob: config['keep_probability']})
 
-                    batch_valid_logits = sess.run(
-                        inference_logits,
-                        {input_data: valid_sources_batch,
-                         source_sequence_length: valid_sources_lengths,
-                         target_sequence_length: valid_targets_lengths,
-                         keep_prob: 1.0})
+                    if batch_i % config['display_step'] == 0 and batch_i > 0:
+                        batch_train_logits = sess.run(
+                            inference_logits,
+                            {input_data: source_batch,
+                             source_sequence_length: sources_lengths,
+                             target_sequence_length: targets_lengths,
+                             keep_prob: 1.0})
 
-                    train_acc = get_accuracy(target_batch, batch_train_logits)
+                        batch_valid_logits = sess.run(
+                            inference_logits,
+                            {input_data: valid_sources_batch,
+                             source_sequence_length: valid_sources_lengths,
+                             target_sequence_length: valid_targets_lengths,
+                             keep_prob: 1.0})
 
-                    valid_acc = get_accuracy(valid_targets_batch, batch_valid_logits)
+                        train_acc = get_accuracy(target_batch, batch_train_logits)
 
-                    print(
-                        'Epoch {:>3} Batch {:>4}/{} - Train Accuracy: {:>6.4f}, Validation Accuracy: {:>6.4f}, Loss: {:>6.4f}'
-                            .format(epoch_i, batch_i, len(x_ids) // config['batch_size'], train_acc, valid_acc, loss))
+                        valid_acc = get_accuracy(valid_targets_batch, batch_valid_logits)
 
-        # Save Model
-        saver = tf.train.Saver()
-        saver.save(sess, config['save_path'])
-        print('Model Trained and Saved')
+                        print(
+                            'Epoch {:>3} Batch {:>4}/{} - Train Accuracy: {:>6.4f}, Validation Accuracy: {:>6.4f}, Loss: {:>6.4f}'
+                                .format(epoch_i, batch_i, len(x_ids) // config['batch_size'], train_acc, valid_acc,
+                                        loss))
+
+            # Save Model
+            saver = tf.train.Saver()
+            saver.save(sess, config['save_path'])
+            print('Model Trained and Saved')
+
+        save_params(config['save_path'])
+
+    _, (source_vocab_to_int, target_vocab_to_int), (
+    source_int_to_vocab, target_int_to_vocab) = load_preprocessing_data()
+    load_path = load_params()
+
+    translate_sentence = sentence_to_seq(config['translate_sentence'], source_vocab_to_int)
+
+    loaded_graph = tf.Graph()
+    with tf.Session(graph=loaded_graph) as sess:
+        # Load saved model
+        loader = tf.train.import_meta_graph(load_path + '.meta')
+        loader.restore(sess, load_path)
+
+        input_data = loaded_graph.get_tensor_by_name('input:0')
+        logits = loaded_graph.get_tensor_by_name('predictions:0')
+        target_sequence_length = loaded_graph.get_tensor_by_name('target_sequence_length:0')
+        source_sequence_length = loaded_graph.get_tensor_by_name('source_sequence_length:0')
+        keep_prob = loaded_graph.get_tensor_by_name('keep_prob:0')
+
+        translate_logits = sess.run(logits, {input_data: [translate_sentence] * config['batch_size'],
+                                             target_sequence_length: [len(translate_sentence) * 2] * config[
+                                                 'batch_size'],
+                                             source_sequence_length: [len(translate_sentence)] * config['batch_size'],
+                                             keep_prob: 1.0})[0]
+
+    print('Input')
+    print('  Word Ids:      {}'.format([i for i in translate_sentence]))
+    print('  English Words: {}'.format([source_int_to_vocab[i] for i in translate_sentence]))
+
+    print('\nPrediction')
+    print('  Word Ids:      {}'.format([i for i in translate_logits]))
+    print('  French Words: {}'.format(" ".join([target_int_to_vocab[i] for i in translate_logits])))
 
     sys.exit()

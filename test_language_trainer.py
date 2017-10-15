@@ -348,6 +348,68 @@ class TestLanguageTrainer(unittest.TestCase):
             assert infer_logits_output.sample_id.get_shape().as_list() == [batch_size, None], \
                 'Wrong shape returned.  Found {}'.format(infer_logits_output.sample_id.get_shape())
 
+    def test_seq2seq_model(seq2seq_model):
+        batch_size = 64
+        vocab_size = 300
+        embedding_size = 100
+        sequence_length = 22
+        rnn_size = 512
+        num_layers = 3
+        target_vocab_to_int = {'<EOS>': 1, '<GO>': 3}
+
+        with tf.Graph().as_default():
+            dec_input = tf.placeholder(tf.int32, [batch_size, sequence_length])
+            dec_embed_input = tf.placeholder(tf.float32, [batch_size, sequence_length, embedding_size])
+            dec_embeddings = tf.placeholder(tf.float32, [vocab_size, embedding_size])
+            keep_prob = tf.placeholder(tf.float32)
+            enc_state = tf.contrib.rnn.LSTMStateTuple(
+                tf.placeholder(tf.float32, [None, rnn_size]),
+                tf.placeholder(tf.float32, [None, rnn_size]))
+
+            input_data = tf.placeholder(tf.int32, [batch_size, sequence_length])
+            target_data = tf.placeholder(tf.int32, [batch_size, sequence_length])
+            keep_prob = tf.placeholder(tf.float32)
+            source_sequence_length = tf.placeholder(tf.int32, (None,), name='source_sequence_length')
+            target_sequence_length_p = tf.placeholder(tf.int32, (None,), name='target_sequence_length')
+            max_target_sequence_length = tf.reduce_max(target_sequence_length_p, name='max_target_len')
+
+            train_decoder_output, infer_logits_output = lt.seq2seq_model(input_data,
+                                                                         target_data,
+                                                                         keep_prob,
+                                                                         batch_size,
+                                                                         source_sequence_length,
+                                                                         target_sequence_length_p,
+                                                                         max_target_sequence_length,
+                                                                         vocab_size,
+                                                                         vocab_size,
+                                                                         embedding_size,
+                                                                         embedding_size,
+                                                                         rnn_size,
+                                                                         num_layers,
+                                                                         target_vocab_to_int)
+
+            # input_data, target_data, keep_prob, batch_size, sequence_length,
+            # 200, target_vocab_size, 64, 80, rnn_size, num_layers, target_vocab_to_int)
+
+            assert isinstance(train_decoder_output, tf.contrib.seq2seq.BasicDecoderOutput), \
+                'Found wrong type: {}'.format(type(train_decoder_output))
+            assert isinstance(infer_logits_output, tf.contrib.seq2seq.BasicDecoderOutput), \
+                'Found wrong type: {}'.format(type(infer_logits_output))
+
+            assert train_decoder_output.rnn_output.get_shape().as_list() == [batch_size, None, vocab_size], \
+                'Wrong shape returned.  Found {}'.format(train_decoder_output.rnn_output.get_shape())
+            assert infer_logits_output.sample_id.get_shape().as_list() == [batch_size, None], \
+                'Wrong shape returned.  Found {}'.format(infer_logits_output.sample_id.get_shape())
+
+    def test_pad_sentences(self):
+        sentences = [[3, 9, 56, 5], [9, 2, 10, 71, 42, 9]]
+        padded_sentences = lt.pad_sentence_batch(sentences, 0)
+        self.assertEqual(len(padded_sentences[0]), len(padded_sentences[1]), "Sentences are not the same length")
+        self.assertListEqual(padded_sentences[0][-2:], [0, 0])
+
+
+
+
 
 if __name__ == '__main__':
     unittest.main()
