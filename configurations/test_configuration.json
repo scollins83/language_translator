@@ -1,4 +1,18 @@
 {
   "x_language_path": "data/small_vocab_en",
-  "y_language_path": "data/small_vocab_fr"
+  "y_language_path": "data/small_vocab_fr",
+  "preprocessing_path": "objects",
+  "train_model": "True",
+  "batch_size": 128,
+  "encoding_embedding_size": 200,
+  "decoding_embedding_size": 200,
+  "rnn_size": 400,
+  "num_layers": 2,
+  "epochs": 100,
+  "learning_rate": 0.005,
+  "keep_probability": 0.5,
+  "display_step": 10,
+  "save_path": "checkpoints/dev",
+  "translate_sentence": "she drove a rusty old truck.",
+  "use_existing_preprocessing": "False"
 }

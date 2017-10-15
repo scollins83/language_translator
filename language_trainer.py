@@ -458,7 +458,7 @@ if __name__ == '__main__':
     else:
         print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
 
-    if config['train_model']:
+    if config['train_model'] == "True":
 
         max_target_sentence_length = max([len(sentence) for sentence in x_ids])
 
