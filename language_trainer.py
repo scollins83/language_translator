@@ -8,6 +8,7 @@ from distutils.version import LooseVersion
 import warnings
 import tensorflow as tf
 from tensorflow.python.layers.core import Dense
+import numpy as np
 
 CODES = {'<PAD>': 0, '<EOS>': 1, '<UNK>': 2, '<GO>': 3}
 
@@ -292,6 +293,99 @@ def decoding_layer(dec_input, encoder_state,
     return train_decoder_output, inference_decoder_output
 
 
+def seq2seq_model(input_data, target_data, keep_prob, batch_size,
+                  source_sequence_length, target_sequence_length,
+                  max_target_sentence_length,
+                  source_vocab_size, target_vocab_size,
+                  enc_embedding_size, dec_embedding_size,
+                  rnn_size, num_layers, target_vocab_to_int):
+    """
+    Build the Sequence-to-Sequence part of the neural network
+    :param input_data: Input placeholder
+    :param target_data: Target placeholder
+    :param keep_prob: Dropout keep probability placeholder
+    :param batch_size: Batch Size
+    :param source_sequence_length: Sequence Lengths of source sequences in the batch
+    :param target_sequence_length: Sequence Lengths of target sequences in the batch
+    :param source_vocab_size: Source vocabulary size
+    :param target_vocab_size: Target vocabulary size
+    :param enc_embedding_size: Decoder embedding size
+    :param dec_embedding_size: Encoder embedding size
+    :param rnn_size: RNN Size
+    :param num_layers: Number of layers
+    :param target_vocab_to_int: Dictionary to go from the target words to an id
+    :return: Tuple of (Training BasicDecoderOutput, Inference BasicDecoderOutput)
+    """
+    _, enc_state = encoding_layer(input_data,
+                                  rnn_size,
+                                  num_layers,
+                                  keep_prob,
+                                  source_sequence_length,
+                                  source_vocab_size,
+                                  enc_embedding_size)
+
+    dec_input = process_decoder_input(target_data, target_vocab_to_int,
+                                      batch_size)
+
+    # Pass encoder state and decoder inputs to the decoders
+    training_decoder_output, inference_decoder_output = decoding_layer(
+        dec_input, enc_state, target_sequence_length, max_target_sentence_length,
+        rnn_size, num_layers, target_vocab_to_int, target_vocab_size,
+        batch_size, keep_prob, dec_embedding_size)
+
+    return training_decoder_output, inference_decoder_output
+
+
+def pad_sentence_batch(sentence_batch, pad_int):
+    """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
+    max_sentence = max([len(sentence) for sentence in sentence_batch])
+    return [sentence + [pad_int] * (max_sentence - len(sentence)) for sentence in sentence_batch]
+
+
+def get_batches(sources, targets, batch_size, source_pad_int, target_pad_int):
+    """Batch targets, sources, and the lengths of their sentences together"""
+    for batch_i in range(0, len(sources) // batch_size):
+        start_i = batch_i * batch_size
+
+        # Slice the right amount for the batch
+        sources_batch = sources[start_i:start_i + batch_size]
+        targets_batch = targets[start_i:start_i + batch_size]
+
+        # Pad
+        pad_sources_batch = np.array(pad_sentence_batch(sources_batch, source_pad_int))
+        pad_targets_batch = np.array(pad_sentence_batch(targets_batch, target_pad_int))
+
+        # Need the lengths for the _lengths parameters
+        pad_targets_lengths = []
+        for target in pad_targets_batch:
+            pad_targets_lengths.append(len(target))
+
+        pad_source_lengths = []
+        for source in pad_sources_batch:
+            pad_source_lengths.append(len(source))
+
+        yield pad_sources_batch, pad_targets_batch, pad_source_lengths, pad_targets_lengths
+
+
+def get_accuracy(target, logits):
+    """
+    Calculate accuracy
+    """
+    max_seq = max(target.shape[1], logits.shape[1])
+    if max_seq - target.shape[1]:
+        target = np.pad(
+            target,
+            [(0, 0), (0, max_seq - target.shape[1])],
+            'constant')
+    if max_seq - logits.shape[1]:
+        logits = np.pad(
+            logits,
+            [(0, 0), (0, max_seq - logits.shape[1])],
+            'constant')
+
+    return np.mean(np.equal(target, logits))
+
+
 
 if __name__ == '__main__':
 
@@ -337,5 +431,106 @@ if __name__ == '__main__':
         warnings.warn('No GPU found. Please use a GPU to train your neural network.')
     else:
         print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+
+    max_target_sentence_length = max([len(sentence) for sentence in x_ids])
+
+    train_graph = tf.Graph()
+    with train_graph.as_default():
+        input_data, targets, lr, keep_prob, target_sequence_length, max_target_sequence_length, source_sequence_length = model_inputs()
+
+        # sequence_length = tf.placeholder_with_default(max_target_sentence_length, None, name='sequence_length')
+        input_shape = tf.shape(input_data)
+
+        train_logits, inference_logits = seq2seq_model(tf.reverse(input_data, [-1]),
+                                                       targets,
+                                                       keep_prob,
+                                                       config['batch_size'],
+                                                       source_sequence_length,
+                                                       target_sequence_length,
+                                                       max_target_sequence_length,
+                                                       len(x_vocab_to_int),
+                                                       len(y_vocab_to_int),
+                                                       config['encoding_embedding_size'],
+                                                       config['decoding_embedding_size'],
+                                                       config['rnn_size'],
+                                                       config['num_layers'],
+                                                       y_vocab_to_int)
+
+        training_logits = tf.identity(train_logits.rnn_output, name='logits')
+        inference_logits = tf.identity(inference_logits.sample_id, name='predictions')
+
+        masks = tf.sequence_mask(target_sequence_length, max_target_sequence_length, dtype=tf.float32, name='masks')
+
+        with tf.name_scope("optimization"):
+            # Loss function
+            cost = tf.contrib.seq2seq.sequence_loss(
+                training_logits,
+                targets,
+                masks)
+
+            # Optimizer
+            optimizer = tf.train.AdamOptimizer(lr)
+
+            # Gradient Clipping
+            gradients = optimizer.compute_gradients(cost)
+            capped_gradients = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gradients if grad is not None]
+            train_op = optimizer.apply_gradients(capped_gradients)
+
+    # Split data to training and validation sets
+    train_source = x_ids[config['batch_size']:]
+    train_target = y_ids[config['batch_size']:]
+    valid_source = x_ids[:config['batch_size']]
+    valid_target = y_ids[:config['batch_size']]
+    (valid_sources_batch, valid_targets_batch, valid_sources_lengths, valid_targets_lengths) = next(
+        get_batches(valid_source,
+                    valid_target,
+                    config['batch_size'],
+                    x_vocab_to_int['<PAD>'],
+                    y_vocab_to_int['<PAD>']))
+    with tf.Session(graph=train_graph) as sess:
+        sess.run(tf.global_variables_initializer())
+
+        for epoch_i in range(config['epochs']):
+            for batch_i, (source_batch, target_batch, sources_lengths, targets_lengths) in enumerate(
+                    get_batches(train_source, train_target, config['batch_size'],
+                                x_vocab_to_int['<PAD>'],
+                                y_vocab_to_int['<PAD>'])):
+
+                _, loss = sess.run(
+                    [train_op, cost],
+                    {input_data: source_batch,
+                     targets: target_batch,
+                     lr: config['learning_rate'],
+                     target_sequence_length: targets_lengths,
+                     source_sequence_length: sources_lengths,
+                     keep_prob: config['keep_probability']})
+
+                if batch_i % config['display_step'] == 0 and batch_i > 0:
+                    batch_train_logits = sess.run(
+                        inference_logits,
+                        {input_data: source_batch,
+                         source_sequence_length: sources_lengths,
+                         target_sequence_length: targets_lengths,
+                         keep_prob: 1.0})
+
+                    batch_valid_logits = sess.run(
+                        inference_logits,
+                        {input_data: valid_sources_batch,
+                         source_sequence_length: valid_sources_lengths,
+                         target_sequence_length: valid_targets_lengths,
+                         keep_prob: 1.0})
+
+                    train_acc = get_accuracy(target_batch, batch_train_logits)
+
+                    valid_acc = get_accuracy(valid_targets_batch, batch_valid_logits)
+
+                    print(
+                        'Epoch {:>3} Batch {:>4}/{} - Train Accuracy: {:>6.4f}, Validation Accuracy: {:>6.4f}, Loss: {:>6.4f}'
+                            .format(epoch_i, batch_i, len(x_ids) // config['batch_size'], train_acc, valid_acc, loss))
+
+        # Save Model
+        saver = tf.train.Saver()
+        saver.save(sess, config['save_path'])
+        print('Model Trained and Saved')
 
     sys.exit()
