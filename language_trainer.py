@@ -420,15 +420,15 @@ if __name__ == '__main__':
 
     # PREPROCESSING
 
+    # Load the datasets
+    x = read_file(config['x_language_path'])
+    y = read_file(config['y_language_path'])
+
+    # Convert to lowercase
+    x = lower_text(x)
+    y = lower_text(y)
+
     if config["use_existing_preprocessing"] == "False":
-
-        # Load the datasets
-        x = read_file(config['x_language_path'])
-        y = read_file(config['y_language_path'])
-
-        # Convert to lowercase
-        x = lower_text(x)
-        y = lower_text(y)
 
         # Create lookup dictionaries
         x_vocab_to_int, x_int_to_vocab = create_lookup_tables(x)
@@ -439,10 +439,11 @@ if __name__ == '__main__':
         y_ids = text_to_ids(y, y_vocab_to_int)
         y_ids = add_eos_tag_to_ids(y_ids, y_vocab_to_int['<EOS>'])
 
-        # Save the preprocessing objects.
-        save_preprocessing_data(x_ids, y_ids, x_vocab_to_int, y_vocab_to_int,
-                                x_int_to_vocab, y_int_to_vocab,
-                                config['preprocessing_path'])
+    # Save the preprocessing objects.
+    save_preprocessing_data(x_ids, y_ids, x_vocab_to_int, y_vocab_to_int,
+                            x_int_to_vocab, y_int_to_vocab,
+                            config['preprocessing_path'])
+
 
     # CONSTRUCT NEURAL NETWORK
     (x_ids, y_ids), (x_vocab_to_int,
@@ -516,8 +517,10 @@ if __name__ == '__main__':
                         config['batch_size'],
                         x_vocab_to_int['<PAD>'],
                         y_vocab_to_int['<PAD>']))
+
         with tf.Session(graph=train_graph) as sess:
             sess.run(tf.global_variables_initializer())
+            file_writer = tf.summary.FileWriter('./logs/1', sess.graph)
 
             for epoch_i in range(config['epochs']):
                 for batch_i, (source_batch, target_batch, sources_lengths, targets_lengths) in enumerate(
@@ -559,7 +562,8 @@ if __name__ == '__main__':
                                         loss))
 
             # Save Model
-            saver = tf.train.Saver()
+            saver = tf.train.Saver(max_to_keep=config['num_checkpoints'],
+                                   keep_checkpoint_every_n_hours=config['checkpoint_hour_interval'])
             saver.save(sess, config['save_path'])
             print('Model Trained and Saved')
 
